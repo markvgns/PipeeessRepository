@@ -23,7 +23,6 @@
 #include "bios.h"
 #include "tinyos.h"
 #include "util.h"
-#include "kernel_threads.h"
 
 /*****************************
  *
@@ -107,8 +106,6 @@ typedef struct thread_control_block
 
   PCB *owner_pcb; /**< @brief This is null for a free TCB */
 
-  PTCB *ptcb; /**<@brief the specifc thread (ptcb) that is connected to this TCB*/
-
   cpu_context_t context; /**< @brief The thread context */
   Thread_type type;      /**< @brief The type of thread */
   Thread_state state;    /**< @brief The state of the thread */
@@ -121,6 +118,8 @@ typedef struct thread_control_block
   rlnode sched_node; /**< @brief Node to use when queueing in the scheduler queue */
   TimerDuration its; /**< @brief Initial time-slice for this thread */
   TimerDuration rts; /**< @brief Remaining time-slice for this thread */
+
+  PTCB *ptcb; /**<@brief the specifc thread (ptcb) that is connected to this TCB*/
 
   int priority;
   enum SCHED_CAUSE curr_cause; /**< @brief The endcause for the current time-slice */

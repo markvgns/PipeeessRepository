@@ -5,7 +5,6 @@
 #include "kernel_sched.h"
 #include "kernel_streams.h"
 #include "kernel_proc.h"
-#include "kernel_pipe.h"
 
 /*************************************
 
@@ -54,14 +53,6 @@ static file_ops nulldev_fops = {
   .Write = nulldev_write,
   .Close = nulldev_close
 };
-
-
-int returnError(void* dev, const char* buf, unsigned int size)
-{
-    return -1;
-}
-
-
 
 
 /*============================================

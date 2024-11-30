@@ -53,7 +53,6 @@ typedef struct file_operations {
 		This function is passed the minor number of the device to be accessed.
 	*/
   	void* (*Open)(uint minor);
-    
 
 
   /** @brief Read operation.
@@ -94,29 +93,6 @@ typedef struct file_operations {
      */
     int (*Close)(void* this);
 } file_ops;
-
-/** @brief reader and writer file ops structures
-     */
-
-static file_ops reader_file_ops = {
-  .Open = NULL,
-  .Read = pipe_read,
-  .Write = returnError,
-  .Close = pipe_reader_close
-};
-
-static file_ops writer_file_ops = {
-  .Open = NULL,
-  .Read = returnError,
-  .Write = pipe_write,
-  .Close = pipe_writer_close
-};
-
-/**
-  @brief returns -1
-*/
-
-int returnError(void* dev, const char* buf, unsigned int size);
 
 
 
