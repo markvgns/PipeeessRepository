@@ -89,10 +89,10 @@ int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 			pipe_cb->w_position = 0;
 		}
 
-		/*No more space to write breaking out of for loop*/
-		if (pipe_cb->empty_space == 0)
+		/*No more space to write waiting for space*/
+		while (pipe_cb->empty_space == 0)
 		{
-			break;
+			kernel_wait(&pipe_cb->has_space, SCHED_USER);
 		}
 	}
 
