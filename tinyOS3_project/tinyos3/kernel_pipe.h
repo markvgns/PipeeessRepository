@@ -9,13 +9,20 @@
 
 #define PIPE_BUFFER_SIZE 20
 
-typedef struct pipe_control_block
+typedef struct Pipe_control_block
 {
   FCB *reader, *writer;
-  CondVar has_space;             /* For blocking writer if no space is available */
-  CondVar has_data;              /* For blocking reader until data are available */
-  int w_position, r_position;    /* write, read position in buffer (it depends on your implementation of bounded buffer, i.e. alternatively pointers can be used)*/
+
+  CondVar has_space; /* For blocking writer if no space is available */
+
+  CondVar has_data; /* For blocking reader until data are available */
+
+  int w_position, r_position; /* write, read position in buffer (it depends on your implementation of bounded buffer, i.e. alternatively pointers can be used)*/
+
   char BUFFER[PIPE_BUFFER_SIZE]; /* bounded (cyclic) byte buffer */
+
+  int empty_space;
+
 } Pipe_cb;
 
 extern file_ops reader_file_ops;
