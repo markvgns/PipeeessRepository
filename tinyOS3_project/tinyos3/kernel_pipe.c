@@ -67,7 +67,7 @@ int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 	}
 
 	/*Case where while loop exited because reader has been closed*/
-	if (pipe_cb->reader == NULL)
+	if (pipe_cb->reader == NULL || pipe_cb->writer == NULL)
 	{
 		return -1;
 	}

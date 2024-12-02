@@ -7,7 +7,7 @@
 #include "kernel_threads.h"
 #include "kernel_dev.h"
 
-#define PIPE_BUFFER_SIZE 20
+#define PIPE_BUFFER_SIZE 4096
 
 typedef struct Pipe_control_block
 {
