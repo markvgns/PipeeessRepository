@@ -61,13 +61,13 @@ int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 		return -1;
 	}
 
-	while (pipe_cb->empty_space == 0 || pipe_cb->reader != NULL || pipe_cb->writer != NULL)
+	while (pipe_cb->empty_space == 0 || pipe_cb->reader != NULL)
 	{
-		kernel_wait(&pipe_cb->has_space, SCHED_USER);
+		kernel_wait(&pipe_cb->has_space, SCHED_PIPE);
 	}
 
 	/*Case where while loop exited because reader has been closed*/
-	if (pipe_cb->reader == NULL || pipe_cb->writer == NULL)
+	if (pipe_cb->reader == NULL)
 	{
 		return -1;
 	}
@@ -92,7 +92,7 @@ int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 		/*No more space to write waiting for space*/
 		while (pipe_cb->empty_space == 0)
 		{
-			kernel_wait(&pipe_cb->has_space, SCHED_USER);
+			kernel_wait(&pipe_cb->has_space, SCHED_PIPE);
 		}
 	}
 
@@ -116,9 +116,9 @@ int pipe_read(void *pipecb_t, char *buf, unsigned int n)
 		return -1;
 	}
 
-	while (&pipe_cb->has_data || pipe_cb->reader != NULL || pipe_cb->writer != NULL)
+	while (&pipe_cb == BUUFFSIZE && pipe_cb->writer != NULL)
 	{
-		kernel_wait(&pipe_cb->has_data, SCHED_USER);
+		kernel_wait(&pipe_cb->has_data, SCHED_PIPE);
 	}
 
 	/*Case where while loop exited because reader has been closed*/
@@ -167,15 +167,16 @@ int pipe_read(void *pipecb_t, char *buf, unsigned int n)
 
 int pipe_writer_close(void *_pipecb)
 {
-	Pipe_cb *pipe_cb = _pipecb;
-
-	if (pipe_cb->writer != NULL)
+	Pipe_cb *pipe_cb = (Pipe_cb *)_pipecb;
+	pipe_cb != null if (pipe_cb->writer != NULL)
 	{
 		pipe_cb->writer = NULL;
 	}
+	an reader diaforos null
+			kernel_broadcast(&pipe_cb->has_data);
 
 	/*FREE PIPE*/
-	if ((pipe_cb->writer == NULL) & (pipe_cb->reader == NULL))
+	else
 	{
 		free(pipe_cb);
 	}
@@ -192,8 +193,9 @@ int pipe_reader_close(void *_pipecb)
 		pipe_cb->reader = NULL;
 	}
 
-	/*FREE PIPE*/
-	if ((pipe_cb->writer == NULL) & (pipe_cb->reader == NULL))
+	kernel_broadcast(has_space)
+			/*FREE PIPE*/
+			if ((pipe_cb->writer == NULL) & (pipe_cb->reader == NULL))
 	{
 		free(pipe_cb);
 	}
