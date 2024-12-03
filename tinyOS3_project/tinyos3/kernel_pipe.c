@@ -167,11 +167,37 @@ int pipe_read(void *pipecb_t, char *buf, unsigned int n)
 
 int pipe_writer_close(void *_pipecb)
 {
+	Pipe_cb *pipe_cb = _pipecb;
+
+	if (pipe_cb->writer != NULL)
+	{
+		pipe_cb->writer = NULL;
+	}
+
+	/*FREE PIPE*/
+	if ((pipe_cb->writer == NULL) & (pipe_cb->reader == NULL))
+	{
+		free(pipe_cb);
+	}
+
 	return 0;
 }
 
 int pipe_reader_close(void *_pipecb)
 {
+	Pipe_cb *pipe_cb = _pipecb;
+
+	if (pipe_cb->reader != NULL)
+	{
+		pipe_cb->reader = NULL;
+	}
+
+	/*FREE PIPE*/
+	if ((pipe_cb->writer == NULL) & (pipe_cb->reader == NULL))
+	{
+		free(pipe_cb);
+	}
+
 	return 0;
 }
 
