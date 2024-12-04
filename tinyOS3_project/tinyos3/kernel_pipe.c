@@ -25,8 +25,6 @@ int sys_Pipe(pipe_t *pipe)
 
 		pipe_cb->r_position = 0;
 
-		pipe_cb->BUFFER[PIPE_BUFFER_SIZE];
-
 		pipe_cb->reader->streamobj = pipe_cb;
 
 		pipe_cb->writer->streamobj = pipe_cb;
@@ -47,13 +45,16 @@ int sys_Pipe(pipe_t *pipe)
 
 int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 {
+
 	/*Checking if pipe control block exists*/
 	if (pipecb_t == NULL)
 	{
 		return -1;
 	}
 
-	Pipe_cb *pipe_cb = pipecb_t;
+	Pipe_cb *pipe_cb = (Pipe_cb *)pipecb_t;
+
+	pipe_cb->written_data = 0;
 
 	/*Checking if the reader exists*/
 	if (pipe_cb->reader == NULL)
@@ -61,7 +62,7 @@ int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 		return -1;
 	}
 
-	while (pipe_cb->empty_space == 0 || pipe_cb->reader != NULL)
+	while ((pipe_cb->empty_space == 0) && (pipe_cb->reader != NULL))
 	{
 		kernel_wait(&pipe_cb->has_space, SCHED_PIPE);
 	}
@@ -71,34 +72,25 @@ int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 	{
 		return -1;
 	}
-
-	for (int i = 0; i != n; i++)
+	/*Reading from buffer*/
+	int i = 0;
+	while (i != n && pipe_cb->empty_space != 0)
 	{
 		/*Writing to pipe buffer*/
 		pipe_cb->BUFFER[pipe_cb->w_position] = buf[i];
 
 		/*Updating positon*/
-		pipe_cb->w_position++;
+		pipe_cb->w_position = (pipe_cb->w_position + 1) % PIPE_BUFFER_SIZE;
 
 		/*Updating empty space*/
 		pipe_cb->empty_space--;
 
-		/*If index has reached the end of the buffer move to the front*/
-		if (pipe_cb->w_position == PIPE_BUFFER_SIZE)
-		{
-			pipe_cb->w_position = 0;
-		}
-
-		/*No more space to write waiting for space*/
-		while (pipe_cb->empty_space == 0)
-		{
-			kernel_wait(&pipe_cb->has_space, SCHED_PIPE);
-		}
+		pipe_cb->written_data++;
 	}
 
 	kernel_broadcast(&pipe_cb->has_data);
 
-	return 0;
+	return pipe_cb->written_data;
 }
 
 int pipe_read(void *pipecb_t, char *buf, unsigned int n)
@@ -108,74 +100,92 @@ int pipe_read(void *pipecb_t, char *buf, unsigned int n)
 		return -1;
 	}
 
-	Pipe_cb *pipe_cb = pipecb_t;
+	Pipe_cb *pipe_cb = (Pipe_cb *)pipecb_t;
+	pipe_cb->read_data = 0;
 
-	/*Checking if the reader and writer exist*/
-	if (pipe_cb->reader == NULL || pipe_cb->writer == NULL)
-	{
-		return -1;
-	}
-
-	while (&pipe_cb == BUUFFSIZE && pipe_cb->writer != NULL)
-	{
-		kernel_wait(&pipe_cb->has_data, SCHED_PIPE);
-	}
-
-	/*Case where while loop exited because reader has been closed*/
+	/*Checking if the reader exists*/
 	if (pipe_cb->reader == NULL)
 	{
 		return -1;
 	}
 
+	while ((pipe_cb->empty_space == PIPE_BUFFER_SIZE) && (pipe_cb->writer != NULL))
+	{
+		kernel_wait(&pipe_cb->has_data, SCHED_PIPE);
+	}
+
 	/*If writer closes we read everything thats on the buffer*/
 	if (pipe_cb->writer == NULL)
 	{
-
-		for (int i = 0; (pipe_cb->r_position != pipe_cb->w_position) || i != n; i++)
+		int i = 0;
+		while ((i != n) && (pipe_cb->empty_space != PIPE_BUFFER_SIZE))
 		{
 
 			buf[i] = pipe_cb->BUFFER[pipe_cb->r_position];
-			pipe_cb->r_position++;
 
-			if (pipe_cb->r_position == PIPE_BUFFER_SIZE)
-			{
-				pipe_cb->r_position = 0;
-			}
+			pipe_cb->r_position = (pipe_cb->r_position + 1) % PIPE_BUFFER_SIZE;
+
+			pipe_cb->empty_space++;
+
+			pipe_cb->read_data++;
 		}
 
 		kernel_broadcast(&pipe_cb->has_space);
 
-		return 0;
+		if (pipe_cb->empty_space == PIPE_BUFFER_SIZE)
+		{
+			return 0;
+		}
+		else
+		{
+			return pipe_cb->read_data;
+		}
 	}
 
 	/*Reading*/
-	for (int i = 0; (pipe_cb->r_position != pipe_cb->w_position) || i == n; i++)
+	int i = 0;
+	while ((i != n) && (pipe_cb->r_position != pipe_cb->w_position))
 	{
 
 		buf[i] = pipe_cb->BUFFER[pipe_cb->r_position];
 
-		pipe_cb->r_position++;
+		pipe_cb->r_position = (pipe_cb->r_position + 1) % PIPE_BUFFER_SIZE;
+
 		pipe_cb->empty_space++;
-		if (pipe_cb->r_position == PIPE_BUFFER_SIZE)
-		{
-			pipe_cb->r_position = 0;
-		}
+
+		pipe_cb->read_data++;
 	}
 
-	return 0;
+	kernel_broadcast(&pipe_cb->has_space);
+
+	if (pipe_cb->empty_space == PIPE_BUFFER_SIZE)
+	{
+		return 0;
+	}
+	else
+	{
+		return pipe_cb->read_data;
+	}
 }
 
 int pipe_writer_close(void *_pipecb)
 {
 	Pipe_cb *pipe_cb = (Pipe_cb *)_pipecb;
-	pipe_cb != null if (pipe_cb->writer != NULL)
+
+	if (pipe_cb != NULL)
+	{
+		return -1;
+	}
+
+	if (pipe_cb->writer != NULL)
 	{
 		pipe_cb->writer = NULL;
 	}
-	an reader diaforos null
-			kernel_broadcast(&pipe_cb->has_data);
 
-	/*FREE PIPE*/
+	if (pipe_cb->reader != NULL)
+	{
+		kernel_broadcast(&pipe_cb->has_data);
+	}
 	else
 	{
 		free(pipe_cb);
@@ -186,16 +196,18 @@ int pipe_writer_close(void *_pipecb)
 
 int pipe_reader_close(void *_pipecb)
 {
-	Pipe_cb *pipe_cb = _pipecb;
+	Pipe_cb *pipe_cb = (Pipe_cb *)_pipecb;
 
 	if (pipe_cb->reader != NULL)
 	{
 		pipe_cb->reader = NULL;
 	}
 
-	kernel_broadcast(has_space)
-			/*FREE PIPE*/
-			if ((pipe_cb->writer == NULL) & (pipe_cb->reader == NULL))
+	if (pipe_cb->writer != NULL)
+	{
+		kernel_broadcast(&pipe_cb->has_space);
+	}
+	else
 	{
 		free(pipe_cb);
 	}

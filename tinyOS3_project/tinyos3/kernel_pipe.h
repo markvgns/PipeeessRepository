@@ -23,6 +23,10 @@ typedef struct Pipe_control_block
 
   int empty_space;
 
+  int written_data;
+
+  int read_data;
+
 } Pipe_cb;
 
 extern file_ops reader_file_ops;
