@@ -54,8 +54,6 @@ int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 	}
 
 
-	pipe_cb->written_data = 0;
-
 
 	/*Checking if the reader exists*/
 	if (pipe_cb->reader == NULL)
@@ -87,7 +85,6 @@ int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 		/*Updating empty space*/
 		pipe_cb->empty_space--;
 
-		pipe_cb->written_data++;
 
 		i++;
 	}
@@ -105,8 +102,6 @@ int pipe_read(void *pipecb_t, char *buf, unsigned int n)
 	{
 		return -1;
 	}
-
-	pipe_cb->read_data = 0;
 
 	/*Checking if the reader exists*/
 	if (pipe_cb->reader == NULL)
@@ -128,8 +123,6 @@ int pipe_read(void *pipecb_t, char *buf, unsigned int n)
 			pipe_cb->r_position = (pipe_cb->r_position + 1) % PIPE_BUFFER_SIZE;
 
 			pipe_cb->empty_space++;
-
-			pipe_cb->read_data++;
 
 			i++;
 		}
