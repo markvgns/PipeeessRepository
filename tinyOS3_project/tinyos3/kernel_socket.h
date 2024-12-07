@@ -9,6 +9,7 @@
 #include "kernel_pipe.h"
 
 
+
 typedef enum {
     SOCKET_LISTENER,
     SOCKET_UNBOUND,
@@ -73,6 +74,13 @@ typedef struct {
     rlnode queue_node;
 
 } connection_request;
+
+extern Socket_cb* port_map[MAX_PORT];
+
+int port_map_init();
+
+int portmap_find(Socket_cb *List[MAX_PORT], port_t key);
+
 
 Fid_t sys_Socket(port_t port);
 
