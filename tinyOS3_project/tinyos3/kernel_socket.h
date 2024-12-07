@@ -79,7 +79,10 @@ extern Socket_cb* port_map[MAX_PORT];
 
 int port_map_init();
 
-int portmap_find(Socket_cb *List[MAX_PORT], port_t key);
+int check_fidt(Fid_t fidt);
+
+Pipe_cb* create_peer_pipe(Fid_t peer_fidt, Fid_t accepted_fidt);
+
 
 
 Fid_t sys_Socket(port_t port);

@@ -27,19 +27,6 @@ int check_fidt(Fid_t fidt)
 
 }
 
-int portmap_find(Socket_cb *List[MAX_PORT], port_t key)
-{
-	int i =0;
-	while (i != MAX_PORT)
-	{
-		if (List[i]->port == key)
-			return i;
-		else
-			i++;
-	}
-	return -1;
-}
-
 Pipe_cb* create_peer_pipe(Fid_t peer_fidt, Fid_t accepted_fidt)
 {
 	Pipe_cb *peer_pipe = (Pipe_cb *)xmalloc(sizeof(Pipe_cb));
@@ -80,14 +67,14 @@ Fid_t sys_Socket(port_t port)
 	if(FCB_reserve(1, &s, &CURPROC->FIDT[MAX_FILEID]) != 0)
 	{
 		socket_cb->fcb = CURPROC->FIDT[s];
-	}else {return -1;}
+	}else {return NOFILE;}
 
 	socket_cb->type = SOCKET_UNBOUND;
 
-	/*if(portmap_find(port_map,port) == -1)
+	if(port > MAX_PORT || port < NOPORT)
 	{
-		return -1;      // why wrong????
-	}*/
+		return NOFILE;   //check for illigal port
+	}
 	
 	
   	socket_cb->port = port;
@@ -250,7 +237,75 @@ Fid_t sys_Accept(Fid_t lsock)
 
 int sys_Connect(Fid_t sock, port_t port, timeout_t timeout)
 {
-	return -1;
+
+	if(check_fidt(sock) != 0)   //check if fidt of client is okay
+	{
+		return -1;
+	}
+
+	FCB* fcb = CURPROC->FIDT[sock]; // Retrieve the FCB associated with the Fid_t
+
+	if (fcb == NULL) {			//check that fcb of listener is not null
+        return NOFILE; 
+    }
+
+    Socket_cb* client_socket = (Socket_cb*)fcb->streamobj; // Retrieve the Socket_cb
+
+
+	if(port > MAX_PORT || port < NOPORT)
+	{
+		return -1;   //check for illigal port
+	}
+
+	//declare the listeners socket
+	Socket_cb* listener;
+
+	//check if the port has no listener and if it doesnt also retrieve its listener
+	for (int i = 0; i < MAX_PORT; i++) {
+
+        if (port_map[i]->port == port) {
+
+            if (port_map[i]->type != SOCKET_LISTENER) {
+
+                return -1; 
+            } else {
+				listener = port_map[i];
+                continue; 
+            }
+        }
+    }
+
+	//increase refcount, we are about to join the request queue
+	listener->refcount++;
+
+
+	//building request
+	connection_request *con_request = (connection_request *)xmalloc(sizeof(connection_request));
+
+	con_request->admitted = 0;
+    con_request->peer = client_socket;
+    con_request->connected_cv = COND_INIT;
+	rlnode_init(&con_request->queue_node, con_request);
+
+	//add request to the listener queue
+	rlist_push_back(&listener->socket_union.listener.queue, &con_request->queue_node);
+
+	//SIGNALL LISTENERRRRR
+
+	//KERNEL_TIMEDWAIT
+
+	//timeout has expired without a successful connection
+	if(con_request->admitted != 1)
+	{
+		return -1;
+	}
+
+
+	//decrease refcount since we are out of the request queue
+	listener->refcount--;
+
+
+	return 0;
 }
 
 
