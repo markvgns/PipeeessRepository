@@ -2,6 +2,7 @@
 #include "tinyos.h"
 #include "kernel_socket.h"
 #include "kernel_pipe.h"
+#include "kernel_cc.h"
 
 Socket_cb* port_map[MAX_PORT]; 
 
@@ -10,7 +11,6 @@ int port_map_init() {
     for (int i = 0; i < MAX_PORT; i++) {
         port_map[i]->port = NOPORT; 
     }
-
 
     return 0; 
 }
@@ -107,9 +107,9 @@ int sys_Listen(Fid_t sock)
 
     Socket_cb* socket_cb = (Socket_cb*)fcb->streamobj; // Return the Socket_cb
 
-	if (socket_cb->port == NOPORT)
+	if(socket_cb->port > MAX_PORT || socket_cb->port < NOPORT)
 	{
-		return -1;
+		return NOFILE;   //check for illigal port
 	}
 
 	for (int i = 0; i < MAX_PORT; i++) {
@@ -121,7 +121,7 @@ int sys_Listen(Fid_t sock)
             other_socket_cb->type == SOCKET_LISTENER) // and its a listener
 		{
             return -1; 
-        }
+        }else{break;}
     }
 
 	if (socket_cb->type == SOCKET_LISTENER) {
@@ -147,7 +147,7 @@ Fid_t sys_Accept(Fid_t lsock)
 {
 	if(check_fidt(lsock) != 0)   //check if fidt of listener is okay
 	{
-		return -1;
+		return NOFILE;
 	}
 
 	FCB* fcb = CURPROC->FIDT[lsock]; // Retrieve the FCB associated with the Fid_t
@@ -157,7 +157,7 @@ Fid_t sys_Accept(Fid_t lsock)
         return NOFILE; 
     }
 
-    Socket_cb* socket_cb = (Socket_cb*)fcb->streamobj; // Retrieve the Socket_cb
+    Socket_cb* socket_cb = (Socket_cb*)fcb->streamobj; // Retrieve the Socket_cb of listener
 
 
     if (socket_cb == NULL || socket_cb->type != SOCKET_LISTENER) {
@@ -178,7 +178,11 @@ Fid_t sys_Accept(Fid_t lsock)
 
 	socket_cb->refcount++;  //increase refcount of listener since we are now waiting for a request from connect
 
-	//WAIT FOR A REQUESTTTT and wakes up with condvar and broadcast++++++++
+	//wait while the list IS empty and the listener port/socket IS NOT null
+	while(is_rlist_empty(&socket_cb->socket_union.listener.queue) != 0 && socket_cb->port != NOPORT &&  socket_cb != NULL)
+	{
+		kernel_wait(&socket_cb->socket_union.listener.req_available, SCHED_USER);
+	}
 
 	if(socket_cb->port == NOPORT || socket_cb == NULL)
 	{
@@ -220,18 +224,24 @@ Fid_t sys_Accept(Fid_t lsock)
 	Pipe_cb* peer_writer = create_peer_pipe(peer_fidt, accepted_fidt);  //first pipe where the one who accepts is writer
 	Pipe_cb* peer_reader = create_peer_pipe(accepted_fidt, peer_fidt);  // second pipe where the one who accepts is reader
 
-	//connecting the new pipes with the peer union
+	//connecting the new pipes to the peer socket
 	peer_socket_cb->socket_union.peer.write_pipe = peer_writer;
 	peer_socket_cb->socket_union.peer.read_pipe = peer_reader;
 
+	//connected the new pipes to the accepted socket
+	accepted_req->peer->socket_union.peer.write_pipe = peer_reader;
+	accepted_req->peer->socket_union.peer.read_pipe = peer_writer;
 
-	// SIGNAL CONNECT TO SAY WE CONNECTED +++++
+
+	// signal connect from the request to say we connected
+	kernel_broadcast(&accepted_req->connected_cv);    
+
 
 	//decrease the refcount of listener since are not waiting anymore
 	socket_cb->refcount--;
 
 
-	return 0;
+	return peer_fidt;
 }
 
 
@@ -245,8 +255,8 @@ int sys_Connect(Fid_t sock, port_t port, timeout_t timeout)
 
 	FCB* fcb = CURPROC->FIDT[sock]; // Retrieve the FCB associated with the Fid_t
 
-	if (fcb == NULL) {			//check that fcb of listener is not null
-        return NOFILE; 
+	if (fcb == NULL) {			//check that fcb is not null
+        return -1; 
     }
 
     Socket_cb* client_socket = (Socket_cb*)fcb->streamobj; // Retrieve the Socket_cb
@@ -270,7 +280,7 @@ int sys_Connect(Fid_t sock, port_t port, timeout_t timeout)
                 return -1; 
             } else {
 				listener = port_map[i];
-                continue; 
+                break; 
             }
         }
     }
@@ -290,9 +300,16 @@ int sys_Connect(Fid_t sock, port_t port, timeout_t timeout)
 	//add request to the listener queue
 	rlist_push_back(&listener->socket_union.listener.queue, &con_request->queue_node);
 
-	//SIGNALL LISTENERRRRR
+	//signal listener about the new request
+	kernel_broadcast(&listener->socket_union.listener.req_available);
 
-	//KERNEL_TIMEDWAIT
+
+	//wait either until timeout or we get admitted
+	while(con_request->admitted != 1)
+	{
+		kernel_timedwait(&con_request->connected_cv, SCHED_USER, timeout);
+	}
+
 
 	//timeout has expired without a successful connection
 	if(con_request->admitted != 1)
@@ -311,34 +328,55 @@ int sys_Connect(Fid_t sock, port_t port, timeout_t timeout)
 
 int sys_ShutDown(Fid_t sock, shutdown_mode how)
 {
-	return -1;
-}
-
-int socket_read(void *pipecb_t, char *buf, unsigned int n)
-{
-
-	if (pipe_read(pipecb_t,buf,n) != -1)
-	{
-		return 0;
-	}
-	else
-	{
-		return -1;
-	}
-}
-
-int socket_write(void *pipecb_t, const char *buf, unsigned int n)
-{
-	if (pipe_write(pipecb_t,buf,n) != -1)
-	{
-		return 0;
-	}
-	else
+	if(check_fidt(sock) != 0)   //check if fidt of is okay
 	{
 		return -1;
 	}
 
+	FCB* fcb = CURPROC->FIDT[sock]; // Retrieve the FCB associated with the Fid_t
+
+
+    if (fcb == NULL) {			//check that fcb is not null
+        return -1; 
+    }
+
+    Socket_cb* socket_cb = (Socket_cb*)fcb->streamobj; // Retrieve the Socket_cb of peer socket
+
+	if(socket_cb->type != SOCKET_PEER)
+	{
+		return -1; 		//if its not a peer socket then it doesnt have a connected pipe
+	}
+
+
+	switch (how)
+	{
+		case SHUTDOWN_READ:
+
+		pipe_reader_close(socket_cb->socket_union.peer.read_pipe);
+
+		break;
+		case SHUTDOWN_WRITE:
+
+		pipe_writer_close(socket_cb->socket_union.peer.write_pipe);
+
+
+		break;
+		case SHUTDOWN_BOTH:
+
+		pipe_reader_close(socket_cb->socket_union.peer.read_pipe);
+		pipe_writer_close(socket_cb->socket_union.peer.write_pipe);
+
+
+		break;
+		default:
+		break;
+
+	}
+
+
+	return 0;
 }
+
 
 int socket_close()
 {
@@ -350,7 +388,7 @@ int socket_close()
 
 file_ops socket_file_ops = {
 		.Open = NULL,
-		.Read = socket_read,
-		.Write = socket_write,
+		.Read = pipe_read,
+		.Write = pipe_write,
 		.Close = socket_close};
 

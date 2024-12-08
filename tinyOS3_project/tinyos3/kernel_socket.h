@@ -84,7 +84,6 @@ int check_fidt(Fid_t fidt);
 Pipe_cb* create_peer_pipe(Fid_t peer_fidt, Fid_t accepted_fidt);
 
 
-
 Fid_t sys_Socket(port_t port);
 
 int sys_Listen(Fid_t sock);
@@ -94,10 +93,6 @@ Fid_t sys_Accept(Fid_t lsock);
 int sys_Connect(Fid_t sock, port_t port, timeout_t timeout);
 
 int sys_ShutDown(Fid_t sock, shutdown_mode how);
-
-int socket_read(void *pipecb_t, char *buf, unsigned int n);
-
-int socket_write(void *pipecb_t, const char *buf, unsigned int n);
 
 int socket_close();
 
