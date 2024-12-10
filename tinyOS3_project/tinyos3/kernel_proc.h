@@ -18,6 +18,7 @@
 #include "tinyos.h"
 #include "kernel_sched.h"
 #include "kernel_threads.h"
+#include "kernel_dev.h"
 
 /**
   @brief PID state
@@ -109,6 +110,15 @@ PCB *get_pcb(Pid_t pid);
   @returns the PID of the process, or NOPROC.
 */
 Pid_t get_pid(PCB *pcb);
+
+extern file_ops procinfo_ops;
+typedef struct procinfo_cb
+{
+  FCB *fcb_pointer;
+  procinfo *info;
+  int cursor;
+
+} procinfo_cb;
 
 /** @} */
 
