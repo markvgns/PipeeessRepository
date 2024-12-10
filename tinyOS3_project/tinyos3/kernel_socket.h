@@ -79,10 +79,7 @@ extern Socket_cb* port_map[MAX_PORT];
 
 int port_map_init();
 
-int check_fidt(Fid_t fidt);
-
 Pipe_cb* create_peer_pipe(Fid_t peer_fidt, Fid_t accepted_fidt);
-
 
 Fid_t sys_Socket(port_t port);
 
@@ -94,8 +91,11 @@ int sys_Connect(Fid_t sock, port_t port, timeout_t timeout);
 
 int sys_ShutDown(Fid_t sock, shutdown_mode how);
 
-int socket_close();
+int socket_write(void* Sock, const char *buf, unsigned int n);
+
+int socket_read(void* Sock, char *buf, unsigned int n);
 
 
+int socket_close(void* Sock);
 
 #endif
