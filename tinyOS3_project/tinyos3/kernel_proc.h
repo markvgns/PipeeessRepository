@@ -114,7 +114,7 @@ Pid_t get_pid(PCB *pcb);
 extern file_ops procinfo_ops;
 typedef struct procinfo_cb
 {
-  FCB *fcb_pointer;
+
   procinfo *info;
   int cursor;
 
