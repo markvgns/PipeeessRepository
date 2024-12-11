@@ -342,17 +342,18 @@ void sys_Exit(int exitval)
 
 Fid_t sys_OpenInfo()
 {
-  printf("0.5");
-  procinfo_cb *procinfocb = (procinfo_cb *)xmalloc(sizeof(procinfo_cb));
-  Fid_t fid;
 
-  if (FCB_reserve(1, &fid, &CURPROC->FIDT[MAX_FILEID]) != 0)
+  Fid_t fid;
+  FCB *fcb;
+
+  if (FCB_reserve(1, &fid, &fcb) != 0)
   {
-    FCB *fcb = CURPROC->FIDT[fid];
+    procinfo_cb *procinfocb = (procinfo_cb *)xmalloc(sizeof(procinfo_cb));
+
     fcb->streamfunc = &procinfo_ops;
     fcb->streamobj = procinfocb;
     procinfocb->cursor = 0;
-    return (Fid_t)procinfocb;
+    return fid;
   }
   else
   {
@@ -362,10 +363,12 @@ Fid_t sys_OpenInfo()
 
 int procinfo_read(void *Procinfo_cb, char *buf, unsigned int size)
 {
-  procinfo_cb *procinfocb = (procinfo_cb *)Procinfo_cb;
 
-  for (int i = procinfocb->cursor; i <= MAX_PROC - 1; i++)
+  procinfo_cb *procinfocb = Procinfo_cb;
+
+  for (int i = procinfocb->cursor; i < MAX_PROC - 1; i++)
   {
+
     PCB *pcb = &PT[procinfocb->cursor];
 
     if (pcb == NULL)

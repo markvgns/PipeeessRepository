@@ -181,6 +181,7 @@ int SystemInfo(size_t argc, const char **argv)
 	printf("Number of cores         = %d\n", cpu_cores());
 	printf("Number of serial devices= %d\n", bios_serial_ports());
 	Fid_t finfo = OpenInfo();
+
 	if (finfo != NOFILE)
 	{
 		/* Print per-process info */
@@ -192,6 +193,7 @@ int SystemInfo(size_t argc, const char **argv)
 
 		while (Read(finfo, (char *)&info, sizeof(info)) > 0)
 		{
+
 			Program prog = NULL;
 			const char *argv[10];
 			int argc = ParseProcInfo(&info, &prog, 10, argv);

@@ -10,12 +10,9 @@ int sys_Pipe(pipe_t *pipe)
 {
 	Pipe_cb *pipe_cb = (Pipe_cb *)xmalloc(sizeof(Pipe_cb));
 
-	if (FCB_reserve(1, &pipe->read, &CURPROC->FIDT[MAX_FILEID]) &&
-			FCB_reserve(1, &pipe->write, &CURPROC->FIDT[MAX_FILEID]) != 0)
+	if (FCB_reserve(1, &pipe->read, &pipe_cb->reader) &&
+			FCB_reserve(1, &pipe->write, &pipe_cb->writer) != 0)
 	{
-
-		pipe_cb->reader = CURPROC->FIDT[pipe->read];
-		pipe_cb->writer = CURPROC->FIDT[pipe->write];
 
 		pipe_cb->has_space = COND_INIT; /* For blocking writer if no space is available */
 
@@ -53,14 +50,11 @@ int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 		return -1;
 	}
 
-
-
 	/*Checking if the reader exists*/
 	if (pipe_cb->reader == NULL)
 	{
 		return -1;
 	}
-
 
 	while ((pipe_cb->empty_space == 0) && (pipe_cb->reader != NULL))
 	{
@@ -84,7 +78,6 @@ int pipe_write(void *pipecb_t, const char *buf, unsigned int n)
 
 		/*Updating empty space*/
 		pipe_cb->empty_space--;
-
 
 		i++;
 	}
@@ -110,29 +103,26 @@ int pipe_read(void *pipecb_t, char *buf, unsigned int n)
 	}
 
 	while ((pipe_cb->empty_space == PIPE_BUFFER_SIZE) && (pipe_cb->writer != NULL))
-	{ 
+	{
 		kernel_wait(&pipe_cb->has_data, SCHED_PIPE);
 	}
 
-		int i = 0;
-		while ((i != n) && (pipe_cb->empty_space != PIPE_BUFFER_SIZE ))
-		{
+	int i = 0;
+	while ((i != n) && (pipe_cb->empty_space != PIPE_BUFFER_SIZE))
+	{
 
-			buf[i] = pipe_cb->BUFFER[pipe_cb->r_position];
+		buf[i] = pipe_cb->BUFFER[pipe_cb->r_position];
 
-			pipe_cb->r_position = (pipe_cb->r_position + 1) % PIPE_BUFFER_SIZE;
+		pipe_cb->r_position = (pipe_cb->r_position + 1) % PIPE_BUFFER_SIZE;
 
-			pipe_cb->empty_space++;
+		pipe_cb->empty_space++;
 
-			i++;
-		}
+		i++;
+	}
 
-		kernel_broadcast(&pipe_cb->has_space);
+	kernel_broadcast(&pipe_cb->has_space);
 
-		return i;
-
-
-
+	return i;
 }
 
 int pipe_writer_close(void *_pipecb)
