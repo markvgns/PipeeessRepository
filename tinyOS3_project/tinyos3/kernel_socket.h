@@ -75,11 +75,11 @@ typedef struct {
 
 } connection_request;
 
-extern Socket_cb* port_map[MAX_PORT];
+extern Socket_cb* port_map[MAX_PORT+1];
 
 int port_map_init();
 
-Pipe_cb* create_peer_pipe(Fid_t peer_fidt, Fid_t accepted_fidt);
+Pipe_cb* create_peer_pipe(FCB* peer_fcb, FCB* accepted_fcb);
 
 Fid_t sys_Socket(port_t port);
 

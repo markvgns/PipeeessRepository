@@ -4,7 +4,7 @@
 #include "kernel_pipe.h"
 #include "kernel_cc.h"
 
-Socket_cb* port_map[MAX_PORT] = {NULL}; 
+Socket_cb* port_map[MAX_PORT+1] = {NULL}; 
 
 /*int port_map_init() {
     for (int i = 0; i < MAX_PORT; i++) {
@@ -16,13 +16,13 @@ Socket_cb* port_map[MAX_PORT] = {NULL};
 }*/
 
 
-Pipe_cb* create_peer_pipe(Fid_t peer_fidt, Fid_t accepted_fidt)
+Pipe_cb* create_peer_pipe(FCB* peer_fcb, FCB* accepted_fcb)
 {
 	Pipe_cb *peer_pipe = (Pipe_cb *)xmalloc(sizeof(Pipe_cb));
 
-	peer_pipe->writer = CURPROC->FIDT[peer_fidt];
+	peer_pipe->writer = peer_fcb;  
 
-	peer_pipe->reader = CURPROC->FIDT[accepted_fidt];
+	peer_pipe->reader = accepted_fcb;
 
 	peer_pipe->has_space = COND_INIT; /* For blocking writer if no space is available */
 
@@ -137,29 +137,32 @@ Fid_t sys_Accept(Fid_t lsock)
         return NOFILE; //  not a listener
     }
 
+    port_t port = socket_cb->port;
+
+	if (port_map[port] == NULL)
+	  return NOFILE;
+
 
 	socket_cb->refcount++;  //increase refcount of listener since we are now waiting for a request from connect
 
+
 	//wait while the list IS empty and the listener port/socket IS NOT null
-	while(is_rlist_empty(&socket_cb->socket_union.listener.queue) != 0 && socket_cb->port != NOPORT &&  socket_cb != NULL)
+	while(is_rlist_empty(&socket_cb->socket_union.listener.queue) != 0 && port_map[port] != NULL)
 	{
 		kernel_wait(&socket_cb->socket_union.listener.req_available, SCHED_USER);
 	}
 
-	if(socket_cb->port == NOPORT || socket_cb == NULL)
-	{
-		return NOFILE;   //the socket or port closed
-	}
+    //decrease the refcount of listener since are not waiting anymore
+	socket_cb->refcount--;
+
+    if (port_map[port] == NULL)
+	   return NOFILE;
 
 
 	//START THE CONNECTION OF PEER SOCKETS--------------
 
 	//get the request of connect from the listener queue
-	connection_request* accepted_req = (connection_request*)(rlist_pop_front(&socket_cb->socket_union.listener.queue));
-
-	//mark the request as admmited
-	accepted_req->admitted = 1;
-
+	connection_request* accepted_req = (connection_request*)(rlist_pop_front(&socket_cb->socket_union.listener.queue)->obj);
 
 	//create new socket - the first peer socket (the second is the one that used connect)
 	Fid_t peer_fidt = sys_Socket(socket_cb->port);
@@ -167,27 +170,22 @@ Fid_t sys_Accept(Fid_t lsock)
 	if(peer_fidt == NOFILE)
 	{return NOFILE;}
 
-	Socket_cb* peer_socket_cb = (Socket_cb*)fcb->streamobj; // Retrieve the socket_cb of the peer
+
+	//get fcb of peer
+	FCB* peer_fcb = get_fcb(peer_fidt);
+
+	//socket of peer
+	Socket_cb* peer_socket_cb = (Socket_cb*)(peer_fcb)->streamobj; // Retrieve the socket_cb of the peer
 
 	//mark it as peer socket
 	peer_socket_cb->type = SOCKET_PEER;
 
-	peer_socket_cb->socket_union.peer.peer = peer_socket_cb;  ///????? is this needed
-
-	//declare the fidt of the accepted peer - the one who used connect
-	Fid_t accepted_fidt;
-
-	//find the fidt of the accepted peer from its fcb
-	for (int i = 0; i < MAX_FILEID; i++) {
-        if (CURPROC->FIDT[i] == accepted_req->peer->fcb) {
-            accepted_fidt = i;
-			break; // Found the matching FIDT
-        }
-	}
+	//fcb of accepted
+	FCB* accepted_fcb = accepted_req->peer->fcb;
 
 	//create the 2 pipes that will connect the two peer sockets
-	Pipe_cb* peer_writer = create_peer_pipe(peer_fidt, accepted_fidt);  //first pipe where the one who accepts is writer
-	Pipe_cb* peer_reader = create_peer_pipe(accepted_fidt, peer_fidt);  // second pipe where the one who accepts is reader
+	Pipe_cb* peer_writer = create_peer_pipe(peer_fcb, accepted_fcb);  //first pipe where the one who accepts is writer
+	Pipe_cb* peer_reader = create_peer_pipe(accepted_fcb, peer_fcb);  // second pipe where the one who accepts is reader
 
 	//connecting the new pipes to the peer socket
 	peer_socket_cb->socket_union.peer.write_pipe = peer_writer;
@@ -198,12 +196,12 @@ Fid_t sys_Accept(Fid_t lsock)
 	accepted_req->peer->socket_union.peer.read_pipe = peer_writer;
 
 
+    //mark the request as admmited
+	accepted_req->admitted = 1;
+
 	// signal connect from the request to say we connected
 	kernel_broadcast(&accepted_req->connected_cv);    
 
-
-	//decrease the refcount of listener since are not waiting anymore
-	socket_cb->refcount--;
 
 
 	return peer_fidt;
@@ -228,16 +226,26 @@ int sys_Connect(Fid_t sock, port_t port, timeout_t timeout)
 		return -1;   //check for illigal port
 	}
 
+	if(client_socket->type == SOCKET_LISTENER)
+	{
+		return -1;   //client_socket is a listener
+	}
+
+	if(client_socket->refcount != 0)
+	{
+		return -1;    //client_socket is connected socket
+	}
+
 	//declare the listeners socket
 	Socket_cb* listener = port_map[port];
 
-	if (listener->type != SOCKET_LISTENER || listener == NULL) {
+	if (listener->type != SOCKET_LISTENER) {
         return -1;  //port has no listener
     }
 
 
 	//increase refcount, we are about to join the request queue
-	listener->refcount++;
+	client_socket->refcount++;
 
 
 	//building request
@@ -252,26 +260,26 @@ int sys_Connect(Fid_t sock, port_t port, timeout_t timeout)
 	rlist_push_back(&listener->socket_union.listener.queue, &con_request->queue_node);
 
 	//signal listener about the new request
-	kernel_broadcast(&listener->socket_union.listener.req_available);
+	kernel_signal(&listener->socket_union.listener.req_available);
 
+	int timeout_happened;
 
 	//wait either until timeout or we get admitted
 	while(con_request->admitted != 1)
 	{
-		kernel_timedwait(&con_request->connected_cv, SCHED_USER, timeout);
+		timeout_happened = kernel_timedwait(&con_request->connected_cv, SCHED_USER, timeout*1000);
+		if (timeout_happened == 0)
+		break;
 	}
 
+    //decrease refcount since we are out of the request queue
+	client_socket->refcount--;
 
 	//timeout has expired without a successful connection
 	if(con_request->admitted != 1)
 	{
 		return -1;
 	}
-
-
-	//decrease refcount since we are out of the request queue
-	listener->refcount--;
-
 
 	return 0;
 }
@@ -294,6 +302,9 @@ int sys_ShutDown(Fid_t sock, shutdown_mode how)
 		return -1; 		//if its not a peer socket then it doesnt have a connected pipe
 	}
 
+	if(socket_cb->socket_union.peer.read_pipe == NULL || socket_cb->socket_union.peer.write_pipe == NULL)
+	{return -1;}
+
 
 	switch (how)
 	{
@@ -307,14 +318,20 @@ int sys_ShutDown(Fid_t sock, shutdown_mode how)
 
 		case SHUTDOWN_BOTH:
 
-		return (pipe_reader_close(socket_cb->socket_union.peer.read_pipe) + 
-		pipe_writer_close(socket_cb->socket_union.peer.write_pipe));
+		if(pipe_reader_close(socket_cb->socket_union.peer.read_pipe) != -1 && 
+		pipe_writer_close(socket_cb->socket_union.peer.write_pipe) != -1)
+		{
+			return 0;
+		}
 
 
 		default:
 		break;
 
 	}
+
+	socket_cb->socket_union.peer.read_pipe = NULL;
+	socket_cb->socket_union.peer.write_pipe = NULL;
 
 
 	return 0;
@@ -323,28 +340,24 @@ int sys_ShutDown(Fid_t sock, shutdown_mode how)
 
 int socket_write(void* Sock, const char *buf, unsigned int n)
 {
-	Fid_t sock = (Fid_t)(intptr_t)Sock;
+	Socket_cb* socket_cb = (Socket_cb*)(intptr_t)Sock;
 	
-	FCB* fcb =get_fcb(sock); // Retrieve the FCB associated with the Fid_t
-
-
-	if(fcb == NULL)
+	if(socket_cb->fcb == NULL)
 	{
 		return -1;
 	}
-
-    Socket_cb* socket_cb = (Socket_cb*)fcb->streamobj; // Retrieve the Socket_cb of peer socket
 
 	if(socket_cb->type != SOCKET_PEER)
 	{
 		return -1; 		//if its not a peer socket then it doesnt have a connected pipe
 	}
 
-	if (pipe_write(socket_cb->socket_union.peer.write_pipe, buf, n) != -1)
-	{
-		return 0;
-	}
-	else {return -1;}
+	if(socket_cb->socket_union.peer.write_pipe == NULL)
+	{return -1;}
+
+	
+	return pipe_write(socket_cb->socket_union.peer.write_pipe, buf, n);
+
 
 
 	
@@ -354,28 +367,26 @@ int socket_write(void* Sock, const char *buf, unsigned int n)
 
 int socket_read(void* Sock, char *buf, unsigned int n)
 {
-	Fid_t sock = (Fid_t)(intptr_t)Sock;
-	
-	FCB* fcb =get_fcb(sock); // Retrieve the FCB associated with the Fid_t
 
+	Socket_cb* socket_cb = (Socket_cb*)(intptr_t)Sock;
 
-	if(fcb == NULL)
+	if(socket_cb->fcb == NULL)
 	{
 		return -1;
 	}
-
-    Socket_cb* socket_cb = (Socket_cb*)fcb->streamobj; // Retrieve the Socket_cb of peer socket
+	
 
 	if(socket_cb->type != SOCKET_PEER)
 	{
 		return -1; 		//if its not a peer socket then it doesnt have a connected pipe
 	}
 
-	if (pipe_read(socket_cb->socket_union.peer.read_pipe, buf, n) != -1)
-	{
-		return 0;
-	}
-	else {return -1;}
+
+	if(socket_cb->socket_union.peer.read_pipe == NULL)
+	{return -1;}
+
+ 	return pipe_read(socket_cb->socket_union.peer.read_pipe, buf, n);
+
 	
 }
 
@@ -383,27 +394,51 @@ int socket_read(void* Sock, char *buf, unsigned int n)
 
 int socket_close(void* Sock)
 {
-	Fid_t sock = (Fid_t)(intptr_t)Sock; 
-	
-	FCB* fcb =get_fcb(sock); // Retrieve the FCB associated with the Fid_t
+	 
+	Socket_cb* socket_cb = (Socket_cb*)(intptr_t)Sock;  // Retrieve the Socket_cb of peer socket
+
+	Fid_t sock;
+
+	for (int i = 0; i < MAX_FILEID; i++) {
+        if (CURPROC->FIDT[i] == socket_cb->fcb) {
+            sock = i;
+			break; // Found the matching FIDT
+        }
+	}	
 
 
-	if(fcb == NULL)
+	switch (socket_cb->type)
 	{
-		return -1;
+		case SOCKET_LISTENER:
+
+		kernel_broadcast(&socket_cb->socket_union.listener.req_available);
+		port_map[socket_cb->port] = NULL;
+		socket_cb->fcb = NULL;
+		return 0;
+
+		case SOCKET_UNBOUND:
+
+		socket_cb->fcb = NULL;
+		return 0;
+
+		case SOCKET_PEER:
+		if(socket_cb->socket_union.peer.read_pipe == NULL || socket_cb->socket_union.peer.write_pipe == NULL)
+		{return -1;}
+		socket_cb->fcb = NULL;
+		int out = sys_ShutDown(sock,SHUTDOWN_BOTH);
+		socket_cb->socket_union.peer.read_pipe = NULL;
+		socket_cb->socket_union.peer.write_pipe = NULL;
+		return out;
+
+
+		default:
+		break;
+
 	}
 
-	if (sys_ShutDown(sock,SHUTDOWN_BOTH) != 0)
-	{
-		return -1;
-	}
-
-
-    Socket_cb* socket_cb = (Socket_cb*)fcb->streamobj; // Retrieve the Socket_cb of peer socket
 
 	if(socket_cb->refcount == 0)
 	{
-		socket_cb = NULL;
 		free(socket_cb);
 	}
 
